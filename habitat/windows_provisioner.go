@@ -9,9 +9,9 @@ import (
 	"github.com/hashicorp/terraform/terraform"
 )
 
-const installScript = `
+const winInstallScript = `
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-iwr https://api.bintray.com/content/habitat/stable/windows/x86_64/hab-%%24latest-x86_64-windows.zip?bt_package=hab-x86_64-windows -Outfile c:\habitat.zip
+iwr https://api.bintray.com/content/habitat/stable/windows/x86_64/hab-%24latest-x86_64-windows.zip?bt_package=hab-x86_64-windows -Outfile c:\habitat.zip
 Expand-Archive c:/habitat.zip c:/
 mv c:/hab-* c:/habitat
 $env:Path = $env:Path,"C:\habitat" -join ";"
@@ -22,11 +22,22 @@ hab pkg exec core/windows-service install
 New-NetFirewallRule -DisplayName "Habitat TCP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9631,9638
 New-NetFirewallRule -DisplayName "Habitat UDP" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 9638
 `
+const winHabLicAccept = `
+[System.Environment]::SetEnvironmentVariable('HAB_LICENSE', "accept", [System.EnvironmentVariableTarget]::Machine)
+[System.Environment]::SetEnvironmentVariable('HAB_LICENSE', "accept", [System.EnvironmentVariableTarget]::Process)
+[System.Environment]::SetEnvironmentVariable('HAB_LICENSE', "accept", [System.EnvironmentVariableTarget]::User)
+`
 
-func (p *provisioner) winInstallHab(o terraform.UIOutput, comm communicator.Communicator, param ...Params) error {
+func (p *provisioner) winInstallHabitat(o terraform.UIOutput, comm communicator.Communicator) error {
 
 	script := path.Join(path.Dir(comm.ScriptPath()), "win_hab_install.ps1")
-	content := fmt.Sprintf(installScript)
+	var content string
+	// Accept the license
+	if p.AcceptLicense {
+		content = fmt.Sprintf("%s\n%s", winHabLicAccept, winInstallScript)
+	} else {
+		content = fmt.Sprintf(winInstallScript)
+	}
 
 	// Upload the script to target instance
 	if err := comm.UploadScript(script, strings.NewReader(content)); err != nil {
@@ -37,7 +48,7 @@ func (p *provisioner) winInstallHab(o terraform.UIOutput, comm communicator.Comm
 	return p.runCommand(o, comm, installCmd)
 }
 
-func (p *provisioner) winStartHab(o terraform.UIOutput, comm communicator.Communicator, params ...Params) error {
+func (p *provisioner) winStartHabitat(o terraform.UIOutput, comm communicator.Communicator) error {
 
 	var content string
 	options := ""
@@ -101,12 +112,11 @@ func (p *provisioner) winStartHab(o terraform.UIOutput, comm communicator.Commun
 
 }
 
-func (p *provisioner) winStartHabService(o terraform.UIOutput, comm communicator.Communicator, params ...Params) error {
+func (p *provisioner) winStartHabService(o terraform.UIOutput, comm communicator.Communicator, service Service) error {
 
 	var command string
-	var service Service
-	service = params[0].habService
-
+	//var service Service
+	//service = params[0].habService
 	if err := p.winUploadUserTOML(o, comm, service); err != nil {
 		return err
 	}

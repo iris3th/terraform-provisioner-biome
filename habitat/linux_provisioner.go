@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"path"
+	"path/filepath"
 	"strings"
 	"text/template"
 
 	"github.com/hashicorp/terraform/communicator"
 	"github.com/hashicorp/terraform/terraform"
-	linereader "github.com/mitchellh/go-linereader"
 )
 
 const linuxInstallURL = "https://raw.githubusercontent.com/habitat-sh/habitat/master/components/hab/install.sh"
@@ -20,8 +19,11 @@ const systemdUnit = `
 Description=Habitat Supervisor
 
 [Service]
-ExecStart=/bin/hab sup run {{ .SupOptions }}
+ExecStart=/bin/hab sup run{{ .SupOptions }}
 Restart=on-failure
+{{ if .GatewayAuthToken -}}
+Environment="HAB_SUP_GATEWAY_AUTH_TOKEN={{ .GatewayAuthToken }}"
+{{ end -}}
 {{ if .BuilderAuthToken -}}
 Environment="HAB_AUTH_TOKEN={{ .BuilderAuthToken }}"
 {{ end -}}
@@ -30,78 +32,90 @@ Environment="HAB_AUTH_TOKEN={{ .BuilderAuthToken }}"
 WantedBy=default.target
 `
 
-func (p *provisioner) linuxUploadRingKey(o terraform.UIOutput, comm communicator.Communicator, params ...Params) error {
-	command := fmt.Sprintf("echo '%s' | hab ring key import", p.RingKeyContent)
-	if p.UseSudo {
-		command = fmt.Sprintf("echo '%s' | sudo hab ring key import", p.RingKeyContent)
-	}
-	return p.runCommand(o, comm, command)
-}
-
-func (p *provisioner) linuxInstallHab(o terraform.UIOutput, comm communicator.Communicator, params ...Params) error {
-	// Build the install command
-	command := fmt.Sprintf("curl -L0 %s > install.sh", linuxInstallURL)
-	if err := p.runCommand(o, comm, command); err != nil {
+func (p *provisioner) linuxInstallHabitat(o terraform.UIOutput, comm communicator.Communicator) error {
+	// Download the hab installer
+	if err := p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("curl --silent -L0 %s > install.sh", linuxInstallURL))); err != nil {
 		return err
 	}
 
 	// Run the install script
+	var command string
 	if p.Version == "" {
-		command = fmt.Sprintf("env HAB_NONINTERACTIVE=true bash ./install.sh ")
+		command = fmt.Sprintf("bash ./install.sh ")
 	} else {
-		command = fmt.Sprintf("env HAB_NONINTERACTIVE=true bash ./install.sh -v %s", p.Version)
+		command = fmt.Sprintf("bash ./install.sh -v %s", p.Version)
 	}
 
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo %s", command)
-	}
-
-	if err := p.runCommand(o, comm, command); err != nil {
+	if err := p.runCommand(o, comm, p.linuxGetCommand(command)); err != nil {
 		return err
 	}
 
 	// Accept the license
 	if p.AcceptLicense {
-		command = fmt.Sprintf("export HAB_LICENSE=accept; hab -V")
-		if p.UseSudo {
-			command = fmt.Sprintf("sudo HAB_LICENSE=accept hab -V")
+		var cmd string
+
+		if p.UseSudo == true {
+			cmd = "env HAB_LICENSE=accept sudo -E /bin/bash -c 'hab -V'"
+		} else {
+			cmd = "env HAB_LICENSE=accept /bin/bash -c 'hab -V'"
 		}
-		if err := p.runCommand(o, comm, command); err != nil {
+
+		if err := p.runCommand(o, comm, cmd); err != nil {
 			return err
 		}
 	}
 
+	// Create the hab user
 	if err := p.createHabUser(o, comm); err != nil {
 		return err
 	}
 
-	return p.runCommand(o, comm, fmt.Sprintf("rm -f install.sh"))
-
+	// Cleanup the installer
+	return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("rm -f install.sh")))
 }
 
-func (p *provisioner) linuxStartHab(o terraform.UIOutput, comm communicator.Communicator, params ...Params) error {
+func (p *provisioner) createHabUser(o terraform.UIOutput, comm communicator.Communicator) error {
+	var addUser bool
+
+	// Install busybox to get us the user tools we need
+	if err := p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("hab install core/busybox"))); err != nil {
+		return err
+	}
+
+	// Check for existing hab user
+	if err := p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("hab pkg exec core/busybox id hab"))); err != nil {
+		o.Output("No existing hab user detected, creating...")
+		addUser = true
+	}
+
+	if addUser {
+		return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("hab pkg exec core/busybox adduser -D -g \"\" hab")))
+	}
+
+	return nil
+}
+
+func (p *provisioner) linuxStartHabitat(o terraform.UIOutput, comm communicator.Communicator) error {
 	// Install the supervisor first
 	var command string
 	if p.Version == "" {
-		command += fmt.Sprintf("hab install core/hab-sup")
+		command += p.linuxGetCommand(fmt.Sprintf("hab install core/hab-sup"))
 	} else {
-		command += fmt.Sprintf("hab install core/hab-sup/%s", p.Version)
+		command += p.linuxGetCommand(fmt.Sprintf("hab install core/hab-sup/%s", p.Version))
 	}
-
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo -E %s", command)
-	}
-
-	command = fmt.Sprintf("env HAB_NONINTERACTIVE=true %s", command)
 
 	if err := p.runCommand(o, comm, command); err != nil {
 		return err
 	}
 
-	// Build up sup options
+	// Build up supervisor options
 	options := ""
 	if p.PermanentPeer {
-		options += " -I"
+		options += " --permanent-peer"
+	}
+
+	if p.ListenCtl != "" {
+		options += fmt.Sprintf(" --listen-ctl %s", p.ListenCtl)
 	}
 
 	if p.ListenGossip != "" {
@@ -113,7 +127,15 @@ func (p *provisioner) linuxStartHab(o terraform.UIOutput, comm communicator.Comm
 	}
 
 	if p.Peer != "" {
-		options += fmt.Sprintf(" --peer %s", p.Peer)
+		options += fmt.Sprintf(" %s", p.Peer)
+	}
+
+	if len(p.Peers) > 0 {
+		if len(p.Peers) == 1 {
+			options += fmt.Sprintf(" --peer %s", p.Peers[0])
+		} else {
+			options += fmt.Sprintf(" --peer %s", strings.Join(p.Peers, " --peer "))
+		}
 	}
 
 	if p.RingKey != "" {
@@ -140,135 +162,109 @@ func (p *provisioner) linuxStartHab(o terraform.UIOutput, comm communicator.Comm
 		options += fmt.Sprintf(" --org %s", p.Organization)
 	}
 
+	if p.HttpDisable == true {
+		options += fmt.Sprintf(" --http-disable")
+	}
+
+	if p.AutoUpdate == true {
+		options += fmt.Sprintf(" --auto-update")
+	}
+
 	p.SupOptions = options
 
+	// Start hab depending on service type
 	switch p.ServiceType {
 	case "unmanaged":
-		return p.startHabUnmanaged(o, comm, options)
+		return p.linuxStartHabitatUnmanaged(o, comm, options)
 	case "systemd":
-		return p.startHabSystemd(o, comm, options)
+		return p.linuxStartHabitatSystemd(o, comm, options)
 	default:
 		return errors.New("Unsupported service type")
 	}
 }
 
-func (p *provisioner) startHabUnmanaged(o terraform.UIOutput, comm communicator.Communicator, options string) error {
-	// Create the sup directory for the log file
-	var command string
+// This func is a little different than the others since we need to expose HAB_AUTH_TOKEN to a shell
+// sub-process that's actually running the supervisor.
+func (p *provisioner) linuxStartHabitatUnmanaged(o terraform.UIOutput, comm communicator.Communicator, options string) error {
 	var token string
-	if p.UseSudo {
-		command = "sudo mkdir -p /hab/sup/default && sudo chmod o+w /hab/sup/default"
-	} else {
-		command = "mkdir -p /hab/sup/default && chmod o+w /hab/sup/default"
-	}
-	if err := p.runCommand(o, comm, command); err != nil {
+
+	// Create the sup directory for the log file
+	if err := p.runCommand(o, comm, p.linuxGetCommand("mkdir -p /hab/sup/default && chmod o+w /hab/sup/default")); err != nil {
 		return err
 	}
 
+	// Set HAB_AUTH_TOKEN if provided
 	if p.BuilderAuthToken != "" {
 		token = fmt.Sprintf("env HAB_AUTH_TOKEN=%s", p.BuilderAuthToken)
 	}
 
-	if p.UseSudo {
-		command = fmt.Sprintf("(%s setsid sudo -E hab sup run %s > /hab/sup/default/sup.log 2>&1 &) ; sleep 1", token, options)
-	} else {
-		command = fmt.Sprintf("(%s setsid hab sup run %s > /hab/sup/default/sup.log 2>&1 <&1 &) ; sleep 1", token, options)
-	}
-	return p.runCommand(o, comm, command)
+	return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("(%ssetsid hab sup run%s > /hab/sup/default/sup.log 2>&1 <&1 &) ; sleep 1", token, options)))
 }
 
-func (p *provisioner) startHabSystemd(o terraform.UIOutput, comm communicator.Communicator, options string) error {
+func (p *provisioner) linuxStartHabitatSystemd(o terraform.UIOutput, comm communicator.Communicator, options string) error {
 	// Create a new template and parse the client config into it
 	unitString := template.Must(template.New("hab-supervisor.service").Parse(systemdUnit))
 
 	var buf bytes.Buffer
 	err := unitString.Execute(&buf, p)
 	if err != nil {
-		return fmt.Errorf("Error executing %s template: %s", "hab-supervisor.service", err)
+		return fmt.Errorf("error executing %s.service template: %s", p.ServiceName, err)
 	}
 
-	var command string
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo echo '%s' | sudo tee /etc/systemd/system/%s.service > /dev/null", &buf, p.ServiceName)
-	} else {
-		command = fmt.Sprintf("echo '%s' | tee /etc/systemd/system/%s.service > /dev/null", &buf, p.ServiceName)
-	}
-
-	if err := p.runCommand(o, comm, command); err != nil {
+	if err := p.linuxUploadSystemdUnit(o, comm, &buf); err != nil {
 		return err
 	}
 
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo systemctl enable hab-supervisor && sudo systemctl start hab-supervisor")
-	} else {
-		command = fmt.Sprintf("systemctl enable hab-supervisor && systemctl start hab-supervisor")
-	}
-	return p.runCommand(o, comm, command)
+	return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("systemctl enable %s && systemctl start %s", p.ServiceName, p.ServiceName)))
 }
 
-func (p *provisioner) createHabUser(o terraform.UIOutput, comm communicator.Communicator) error {
-	addUser := false
-	// Install busybox to get us the user tools we need
-	command := fmt.Sprintf("env HAB_NONINTERACTIVE=true hab install core/busybox")
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo %s", command)
-	}
-	if err := p.runCommand(o, comm, command); err != nil {
-		return err
-	}
+func (p *provisioner) linuxUploadSystemdUnit(o terraform.UIOutput, comm communicator.Communicator, contents *bytes.Buffer) error {
+	destination := fmt.Sprintf("/etc/systemd/system/%s.service", p.ServiceName)
 
-	// Check for existing hab user
-	command = fmt.Sprintf("hab pkg exec core/busybox id hab")
 	if p.UseSudo {
-		command = fmt.Sprintf("sudo %s", command)
-	}
-	if err := p.runCommand(o, comm, command); err != nil {
-		o.Output("No existing hab user detected, creating...")
-		addUser = true
-	}
-
-	if addUser {
-		command = fmt.Sprintf("hab pkg exec core/busybox adduser -D -g \"\" hab")
-		if p.UseSudo {
-			command = fmt.Sprintf("sudo %s", command)
+		tempPath := fmt.Sprintf("/tmp/%s.service", p.ServiceName)
+		if err := comm.Upload(tempPath, contents); err != nil {
+			return err
 		}
-		return p.runCommand(o, comm, command)
+
+		return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("mv %s %s", tempPath, destination)))
 	}
 
-	return nil
+	return comm.Upload(destination, contents)
 }
 
-// In the future we'll remove the dedicated install once the synchronous load feature in hab-sup is
-// available. Until then we install here to provide output and a noisy failure mechanism because
-// if you install with the pkg load, it occurs asynchronously and fails quietly.
-func (p *provisioner) installHabPackage(o terraform.UIOutput, comm communicator.Communicator, service Service) error {
-	var command string
-	options := ""
-	if service.Channel != "" {
-		options += fmt.Sprintf(" --channel %s", service.Channel)
+func (p *provisioner) linuxUploadRingKey(o terraform.UIOutput, comm communicator.Communicator) error {
+	return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf(`echo -e "%s" | hab ring key import`, p.RingKeyContent)))
+}
+
+func (p *provisioner) linuxUploadCtlSecret(o terraform.UIOutput, comm communicator.Communicator) error {
+	destination := fmt.Sprintf("/hab/sup/default/CTL_SECRET")
+	// Create the destination directory
+	err := p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("mkdir -p %s", filepath.Dir(destination))))
+	if err != nil {
+		return err
 	}
 
-	if service.URL != "" {
-		options += fmt.Sprintf(" --url %s", service.URL)
-	}
+	keyContent := strings.NewReader(p.CtlSecret)
 	if p.UseSudo {
-		command = fmt.Sprintf("env HAB_NONINTERACTIVE=true sudo -E hab pkg install %s %s", service.Name, options)
-	} else {
-		command = fmt.Sprintf("env HAB_NONINTERACTIVE=true hab pkg install %s %s", service.Name, options)
+		tempPath := fmt.Sprintf("/tmp/CTL_SECRET")
+		if err := comm.Upload(tempPath, keyContent); err != nil {
+			return err
+		}
+
+		return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("mv %s %s && chown root:root %s && chmod 0600 %s", tempPath, destination, destination, destination)))
 	}
 
-	if p.BuilderAuthToken != "" {
-		command = fmt.Sprintf("env HAB_AUTH_TOKEN=%s %s", p.BuilderAuthToken, command)
-	}
-	return p.runCommand(o, comm, command)
+	return comm.Upload(destination, keyContent)
 }
 
-func (p *provisioner) linuxStartHabService(o terraform.UIOutput, comm communicator.Communicator, params ...Params) error {
-	var command string
-	var service Service
-	service = params[0].habService
+//
+// Habitat Services
+//
+func (p *provisioner) linuxStartHabitatService(o terraform.UIOutput, comm communicator.Communicator, service Service) error {
+	var options string
 
-	if err := p.installHabPackage(o, comm, service); err != nil {
+	if err := p.linuxInstallHabitatPackage(o, comm, service); err != nil {
 		return err
 	}
 	if err := p.linuxUploadUserTOML(o, comm, service); err != nil {
@@ -277,10 +273,12 @@ func (p *provisioner) linuxStartHabService(o terraform.UIOutput, comm communicat
 
 	// Upload service group key
 	if service.ServiceGroupKey != "" {
-		p.uploadServiceGroupKey(o, comm, service.ServiceGroupKey)
+		err := p.uploadServiceGroupKey(o, comm, service.ServiceGroupKey)
+		if err != nil {
+			return err
+		}
 	}
 
-	options := ""
 	if service.Topology != "" {
 		options += fmt.Sprintf(" --topology %s", service.Topology)
 	}
@@ -304,14 +302,25 @@ func (p *provisioner) linuxStartHabService(o terraform.UIOutput, comm communicat
 	for _, bind := range service.Binds {
 		options += fmt.Sprintf(" --bind %s", bind.toBindString())
 	}
-	command = fmt.Sprintf("hab svc load %s %s", service.Name, options)
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo -E %s", command)
+
+	return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("hab svc load %s %s", service.Name, options)))
+}
+
+// In the future we'll remove the dedicated install once the synchronous load feature in hab-sup is
+// available. Until then we install here to provide output and a noisy failure mechanism because
+// if you install with the pkg load, it occurs asynchronously and fails quietly.
+func (p *provisioner) linuxInstallHabitatPackage(o terraform.UIOutput, comm communicator.Communicator, service Service) error {
+	var options string
+
+	if service.Channel != "" {
+		options += fmt.Sprintf(" --channel %s", service.Channel)
 	}
-	if p.BuilderAuthToken != "" {
-		command = fmt.Sprintf("env HAB_AUTH_TOKEN=%s %s", p.BuilderAuthToken, command)
+
+	if service.URL != "" {
+		options += fmt.Sprintf(" --url %s", service.URL)
 	}
-	return p.runCommand(o, comm, command)
+
+	return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("hab pkg install %s %s", service.Name, options)))
 }
 
 func (p *provisioner) uploadServiceGroupKey(o terraform.UIOutput, comm communicator.Communicator, key string) error {
@@ -325,8 +334,8 @@ func (p *provisioner) uploadServiceGroupKey(o terraform.UIOutput, comm communica
 		if err := comm.Upload(tempPath, keyContent); err != nil {
 			return err
 		}
-		command := fmt.Sprintf("sudo mv %s %s", tempPath, destPath)
-		return p.runCommand(o, comm, command)
+
+		return p.runCommand(o, comm, p.linuxGetCommand(fmt.Sprintf("mv %s %s", tempPath, destPath)))
 	}
 
 	return comm.Upload(destPath, keyContent)
@@ -335,11 +344,8 @@ func (p *provisioner) uploadServiceGroupKey(o terraform.UIOutput, comm communica
 func (p *provisioner) linuxUploadUserTOML(o terraform.UIOutput, comm communicator.Communicator, service Service) error {
 	// Create the hab svc directory to lay down the user.toml before loading the service
 	o.Output("Uploading user.toml for service: " + service.Name)
-	destDir := fmt.Sprintf("/hab/svc/%s", service.getPackageName(service.Name))
-	command := fmt.Sprintf("mkdir -p %s", destDir)
-	if p.UseSudo {
-		command = fmt.Sprintf("sudo %s", command)
-	}
+	destDir := fmt.Sprintf("/hab/user/%s/config", service.getPackageName(service.Name))
+	command := p.linuxGetCommand(fmt.Sprintf("mkdir -p %s", destDir))
 	if err := p.runCommand(o, comm, command); err != nil {
 		return err
 	}
@@ -347,10 +353,10 @@ func (p *provisioner) linuxUploadUserTOML(o terraform.UIOutput, comm communicato
 	userToml := strings.NewReader(service.UserTOML)
 
 	if p.UseSudo {
-		if err := comm.Upload("/tmp/user.toml", userToml); err != nil {
+		if err := comm.Upload(fmt.Sprintf("/tmp/user-%s.toml", service.getServiceNameChecksum()), userToml); err != nil {
 			return err
 		}
-		command = fmt.Sprintf("sudo mv /tmp/user.toml %s", destDir)
+		command = p.linuxGetCommand(fmt.Sprintf("mv /tmp/user-%s.toml %s/user.toml", service.getServiceNameChecksum(), destDir))
 		return p.runCommand(o, comm, command)
 	}
 
@@ -358,23 +364,20 @@ func (p *provisioner) linuxUploadUserTOML(o terraform.UIOutput, comm communicato
 
 }
 
-func (p *provisioner) copyOutput(o terraform.UIOutput, r io.Reader) {
-	lr := linereader.New(r)
-	for line := range lr.Ch {
-		o.Output(line)
-	}
-}
+func (p *provisioner) linuxGetCommand(command string) string {
+	// Always set HAB_NONINTERACTIVE & HAB_NOCOLORING
+	env := fmt.Sprintf("env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true")
 
-func getBindFromString(bind string) (Bind, error) {
-	t := strings.FieldsFunc(bind, func(d rune) bool {
-		switch d {
-		case ':', '.':
-			return true
-		}
-		return false
-	})
-	if len(t) != 3 {
-		return Bind{}, errors.New("Invalid bind specification: " + bind)
+	// Set builder auth token
+	if p.BuilderAuthToken != "" {
+		env += fmt.Sprintf(" HAB_AUTH_TOKEN=%s", p.BuilderAuthToken)
 	}
-	return Bind{Alias: t[0], Service: t[1], Group: t[2]}, nil
+
+	if p.UseSudo {
+		command = fmt.Sprintf("%s sudo -E /bin/bash -c '%s'", env, command)
+	} else {
+		command = fmt.Sprintf("%s /bin/bash -c '%s'", env, command)
+	}
+
+	return command
 }

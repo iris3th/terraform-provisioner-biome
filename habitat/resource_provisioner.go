@@ -2,6 +2,7 @@ package habitat
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -11,31 +12,33 @@ import (
 	version "github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform/communicator"
 	"github.com/hashicorp/terraform/communicator/remote"
+	"github.com/hashicorp/terraform/configs/hcl2shim"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/helper/validation"
 	"github.com/hashicorp/terraform/terraform"
+	linereader "github.com/mitchellh/go-linereader"
 )
 
-var serviceTypes = map[string]bool{"unmanaged": true, "systemd": true}
-var updateStrategies = map[string]bool{"at-once": true, "rolling": true, "none": true}
-var topologies = map[string]bool{"leader": true, "standalone": true}
-
-type provisionFn func(terraform.UIOutput, communicator.Communicator, ...Params) error
 type Params struct {
 	habService Service
 }
 
 type provisioner struct {
 	Version          string
+	AutoUpdate       bool
+	HttpDisable      bool
 	Services         []Service
 	PermanentPeer    bool
+	ListenCtl        string
 	ListenGossip     string
 	ListenHTTP       string
 	Peer             string
+	Peers            []string
 	RingKey          string
 	RingKeyContent   string
+	CtlSecret        string
 	SkipInstall      bool
 	UseSudo          bool
-	AcceptLicense    bool
 	ServiceType      string
 	ServiceName      string
 	URL              string
@@ -43,57 +46,53 @@ type provisioner struct {
 	Events           string
 	OverrideName     string
 	Organization     string
+	GatewayAuthToken string
 	BuilderAuthToken string
 	SupOptions       string
-	OSType           string
+	AcceptLicense    bool
+	osType           string
 
-	installHab      provisionFn
-	uploadRingKey   provisionFn
-	startHab        provisionFn
-	startHabService provisionFn
-	StartHabService provisionFn
-}
-type Service struct {
-	Name            string
-	Strategy        string
-	Topology        string
-	Channel         string
-	Group           string
-	URL             string
-	Binds           []Bind
-	BindStrings     []string
-	UserTOML        string
-	AppName         string
-	Environment     string
-	OverrideName    string
-	ServiceGroupKey string
+	installHabitat      provisionFn
+	startHabitat        provisionFn
+	uploadRingKey       provisionFn
+	uploadCtlSecret     provisionFn
+	startHabitatService provisionServiceFn
 }
 
-type Bind struct {
-	Alias   string
-	Service string
-	Group   string
-}
+type provisionFn func(terraform.UIOutput, communicator.Communicator) error
+type provisionServiceFn func(terraform.UIOutput, communicator.Communicator, Service) error
 
-func Provisioner() *schema.Provisioner {
+func Provisioner() terraform.ResourceProvisioner {
 	return &schema.Provisioner{
 		Schema: map[string]*schema.Schema{
 			"version": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"accept_license": &schema.Schema{
+			"auto_update": &schema.Schema{
 				Type:     schema.TypeBool,
-				Required: true,
+				Optional: true,
+				Default:  false,
+			},
+			"http_disable": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
 			},
 			"peer": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"service_type": &schema.Schema{
-				Type:     schema.TypeString,
+			"peers": &schema.Schema{
+				Type:     schema.TypeList,
+				Elem:     &schema.Schema{Type: schema.TypeString},
 				Optional: true,
-				Default:  "systemd",
+			},
+			"service_type": &schema.Schema{
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "systemd",
+				ValidateFunc: validation.StringInSlice([]string{"systemd", "unmanaged"}, false),
 			},
 			"service_name": &schema.Schema{
 				Type:     schema.TypeString,
@@ -105,10 +104,18 @@ func Provisioner() *schema.Provisioner {
 				Optional: true,
 				Default:  true,
 			},
+			"accept_license": &schema.Schema{
+				Type:     schema.TypeBool,
+				Required: true,
+			},
 			"permanent_peer": &schema.Schema{
 				Type:     schema.TypeBool,
 				Optional: true,
 				Default:  false,
+			},
+			"listen_ctl": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
 			},
 			"listen_gossip": &schema.Schema{
 				Type:     schema.TypeString,
@@ -126,9 +133,25 @@ func Provisioner() *schema.Provisioner {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"ctl_secret": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+			},
 			"url": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				ValidateFunc: func(val interface{}, key string) (warns []string, errs []error) {
+					u, err := url.Parse(val.(string))
+					if err != nil {
+						errs = append(errs, fmt.Errorf("invalid URL specified for %q: %v", key, err))
+					}
+
+					if u.Scheme == "" {
+						errs = append(errs, fmt.Errorf("invalid URL specified for %q (scheme must be specified)", key))
+					}
+
+					return warns, errs
+				},
 			},
 			"channel": &schema.Schema{
 				Type:     schema.TypeString,
@@ -138,15 +161,19 @@ func Provisioner() *schema.Provisioner {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"override_name": &schema.Schema{
-				Type:     schema.TypeString,
-				Optional: true,
-			},
 			"organization": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"gateway_auth_token": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+			},
 			"builder_auth_token": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+			"override_name": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 			},
@@ -184,19 +211,20 @@ func Provisioner() *schema.Provisioner {
 							Optional: true,
 						},
 						"topology": &schema.Schema{
-							Type:     schema.TypeString,
-							Optional: true,
+							Type:         schema.TypeString,
+							Optional:     true,
+							ValidateFunc: validation.StringInSlice([]string{"leader", "standalone"}, false),
 						},
 						"user_toml": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
 						},
 						"strategy": &schema.Schema{
-							Type:     schema.TypeString,
-							Optional: true,
+							Type:         schema.TypeString,
+							Optional:     true,
+							ValidateFunc: validation.StringInSlice([]string{"none", "rolling", "at-once"}, false),
 						},
 						"channel": &schema.Schema{
-
 							Type:     schema.TypeString,
 							Optional: true,
 						},
@@ -207,6 +235,18 @@ func Provisioner() *schema.Provisioner {
 						"url": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
+							ValidateFunc: func(val interface{}, key string) (warns []string, errs []error) {
+								u, err := url.Parse(val.(string))
+								if err != nil {
+									errs = append(errs, fmt.Errorf("invalid URL specified for %q: %v", key, err))
+								}
+
+								if u.Scheme == "" {
+									errs = append(errs, fmt.Errorf("invalid URL specified for %q (scheme must be specified)", key))
+								}
+
+								return warns, errs
+							},
 						},
 						"application": &schema.Schema{
 							Type:     schema.TypeString,
@@ -244,34 +284,33 @@ func applyFn(ctx context.Context) error {
 		return err
 	}
 
-	if p.OSType == "" {
-		switch t := s.Ephemeral.ConnInfo["type"]; t {
-		case "ssh", "": // The default connection type is ssh, so if the type is empty assume ssh
-			p.OSType = "linux"
-		case "winrm":
-			p.OSType = "windows"
-		default:
-			return fmt.Errorf("Unsupported connection type: %s", t)
-		}
+	// Automatically determine the OS type
+	switch t := s.Ephemeral.ConnInfo["type"]; t {
+	case "ssh", "":
+		p.osType = "linux"
+	case "winrm":
+		p.osType = "windows"
+	default:
+		return fmt.Errorf("unsupported connection type: %s", t)
 	}
 
-	// Set some values based on the targeted OS
-	switch p.OSType {
+	switch p.osType {
 	case "linux":
-		p.installHab = p.linuxInstallHab
+		p.installHabitat = p.linuxInstallHabitat
 		p.uploadRingKey = p.linuxUploadRingKey
-		p.startHab = p.linuxStartHab
-		p.startHabService = p.linuxStartHabService
-
+		p.uploadCtlSecret = p.linuxUploadCtlSecret
+		p.startHabitat = p.linuxStartHabitat
+		p.startHabitatService = p.linuxStartHabitatService
 	case "windows":
-		p.installHab = p.winInstallHab
-		p.startHabService = p.winStartHabService
-		p.startHab = p.winStartHab
+		p.installHabitat = p.winInstallHabitat
+		p.startHabitatService = p.winStartHabService
+		p.startHabitat = p.winStartHabitat
 
 	default:
-		return fmt.Errorf("Unsupported os type: %s", p.OSType)
+		return fmt.Errorf("Unsupported os type: %s", p.osType)
 	}
 
+	// Get a new communicator
 	comm, err := communicator.New(s)
 	if err != nil {
 		return err
@@ -280,6 +319,7 @@ func applyFn(ctx context.Context) error {
 	retryCtx, cancel := context.WithTimeout(ctx, comm.Timeout())
 	defer cancel()
 
+	// Wait and retry until we establish the connection
 	err = communicator.Retry(retryCtx, func() error {
 		return comm.Connect(o)
 	})
@@ -291,13 +331,13 @@ func applyFn(ctx context.Context) error {
 
 	if !p.SkipInstall {
 		o.Output("Installing habitat...")
-		if err := p.installHab(o, comm); err != nil {
+		if err := p.installHabitat(o, comm); err != nil {
 			o.Output("Error installing habitat...")
 			return err
 		}
 	}
 
-	if p.OSType != "windows" { //ToDo: remove this after adding similar for Win
+	if p.osType != "windows" { //ToDo: remove this after adding similar for Win
 
 		if p.RingKeyContent != "" {
 			o.Output("Uploading supervisor ring key...")
@@ -305,15 +345,21 @@ func applyFn(ctx context.Context) error {
 				return err
 			}
 		}
+		if p.CtlSecret != "" {
+			o.Output("Uploading ctl secret...")
+			if err := p.uploadCtlSecret(o, comm); err != nil {
+				return err
+			}
+		}
 	}
 	o.Output("Starting the habitat supervisor...")
-	if err := p.startHab(o, comm); err != nil {
+	if err := p.startHabitat(o, comm); err != nil {
 		return err
 	}
 	if p.Services != nil {
 		for _, service := range p.Services {
 			o.Output("Starting service: " + service.Name)
-			if err := p.startHabService(o, comm, Params{habService: service}); err != nil {
+			if err := p.startHabitatService(o, comm, service); err != nil {
 				return err
 			}
 		}
@@ -322,17 +368,11 @@ func applyFn(ctx context.Context) error {
 }
 
 func validateFn(c *terraform.ResourceConfig) (ws []string, es []error) {
-	serviceType, ok := c.Get("service_type")
-	if ok {
-		if !serviceTypes[serviceType.(string)] {
-			es = append(es, errors.New(serviceType.(string)+" is not a valid service_type."))
-		}
-	}
-
-	builderURL, ok := c.Get("url")
-	if ok {
-		if _, err := url.ParseRequestURI(builderURL.(string)); err != nil {
-			es = append(es, errors.New(builderURL.(string)+" is not a valid URL."))
+	ringKeyContent, ok := c.Get("ring_key_content")
+	if ok && ringKeyContent != "" && ringKeyContent != hcl2shim.UnknownVariableValue {
+		ringKey, ringOk := c.Get("ring_key")
+		if ringOk && ringKey == "" {
+			es = append(es, errors.New("if ring_key_content is specified, ring_key must be specified as well"))
 		}
 	}
 
@@ -359,58 +399,56 @@ func validateFn(c *terraform.ResourceConfig) (ws []string, es []error) {
 	// Validate service level configs
 	services, ok := c.Get("service")
 	if ok {
-		for _, service := range services.([]map[string]interface{}) {
-			strategy, ok := service["strategy"].(string)
-			if ok && !updateStrategies[strategy] {
-				es = append(es, errors.New(strategy+" is not a valid update strategy."))
-			}
-
-			topology, ok := service["topology"].(string)
-			if ok && !topologies[topology] {
-				es = append(es, errors.New(topology+" is not a valid topology"))
-			}
-
-			builderURL, ok := service["url"].(string)
-			if ok {
-				if _, err := url.ParseRequestURI(builderURL); err != nil {
-					es = append(es, errors.New(builderURL+" is not a valid URL."))
-				}
-			}
+		data, dataOk := services.(string)
+		if dataOk {
+			es = append(es, fmt.Errorf("service '%v': must be a block", data))
 		}
 	}
+
 	return ws, es
 }
 
-func (p *provisioner) runCommand(o terraform.UIOutput, comm communicator.Communicator, command string) error {
-	outR, outW := io.Pipe()
-	errR, errW := io.Pipe()
+type Service struct {
+	Name            string
+	Strategy        string
+	Topology        string
+	Channel         string
+	Group           string
+	URL             string
+	Binds           []Bind
+	BindStrings     []string
+	UserTOML        string
+	AppName         string
+	Environment     string
+	OverrideName    string
+	ServiceGroupKey string
+}
 
-	go p.copyOutput(o, outR)
-	go p.copyOutput(o, errR)
-	defer outW.Close()
-	defer errW.Close()
+func (s *Service) getPackageName(fullName string) string {
+	return strings.Split(fullName, "/")[1]
+}
 
-	cmd := &remote.Cmd{
-		Command: command,
-		Stdout:  outW,
-		Stderr:  errW,
-	}
+func (s *Service) getServiceNameChecksum() string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(s.Name)))
+}
 
-	if err := comm.Start(cmd); err != nil {
-		return fmt.Errorf("Error executing command %q: %v", cmd.Command, err)
-	}
+type Bind struct {
+	Alias   string
+	Service string
+	Group   string
+}
 
-	if err := cmd.Wait(); err != nil {
-		return err
-	}
-
-	return nil
+func (b *Bind) toBindString() string {
+	return fmt.Sprintf("%s:%s.%s", b.Alias, b.Service, b.Group)
 }
 
 func decodeConfig(d *schema.ResourceData) (*provisioner, error) {
 	p := &provisioner{
 		Version:          d.Get("version").(string),
+		AutoUpdate:       d.Get("auto_update").(bool),
+		HttpDisable:      d.Get("http_disable").(bool),
 		Peer:             d.Get("peer").(string),
+		Peers:            getPeers(d.Get("peers").([]interface{})),
 		Services:         getServices(d.Get("service").(*schema.Set).List()),
 		UseSudo:          d.Get("use_sudo").(bool),
 		AcceptLicense:    d.Get("accept_license").(bool),
@@ -418,7 +456,9 @@ func decodeConfig(d *schema.ResourceData) (*provisioner, error) {
 		ServiceName:      d.Get("service_name").(string),
 		RingKey:          d.Get("ring_key").(string),
 		RingKeyContent:   d.Get("ring_key_content").(string),
+		CtlSecret:        d.Get("ctl_secret").(string),
 		PermanentPeer:    d.Get("permanent_peer").(bool),
+		ListenCtl:        d.Get("listen_ctl").(string),
 		ListenGossip:     d.Get("listen_gossip").(string),
 		ListenHTTP:       d.Get("listen_http").(string),
 		URL:              d.Get("url").(string),
@@ -427,9 +467,18 @@ func decodeConfig(d *schema.ResourceData) (*provisioner, error) {
 		OverrideName:     d.Get("override_name").(string),
 		Organization:     d.Get("organization").(string),
 		BuilderAuthToken: d.Get("builder_auth_token").(string),
+		GatewayAuthToken: d.Get("gateway_auth_token").(string),
 	}
 
 	return p, nil
+}
+
+func getPeers(v []interface{}) []string {
+	peers := make([]string, 0, len(v))
+	for _, rawPeerData := range v {
+		peers = append(peers, rawPeerData.(string))
+	}
+	return peers
 }
 
 func getServices(v []interface{}) []Service {
@@ -494,10 +543,49 @@ func getBinds(v []interface{}) []Bind {
 	return binds
 }
 
-func (s *Service) getPackageName(fullName string) string {
-	return strings.Split(fullName, "/")[1]
+func (p *provisioner) copyOutput(o terraform.UIOutput, r io.Reader) {
+	lr := linereader.New(r)
+	for line := range lr.Ch {
+		o.Output(line)
+	}
 }
 
-func (b *Bind) toBindString() string {
-	return fmt.Sprintf("%s:%s.%s", b.Alias, b.Service, b.Group)
+func (p *provisioner) runCommand(o terraform.UIOutput, comm communicator.Communicator, command string) error {
+	outR, outW := io.Pipe()
+	errR, errW := io.Pipe()
+
+	go p.copyOutput(o, outR)
+	go p.copyOutput(o, errR)
+	defer outW.Close()
+	defer errW.Close()
+
+	cmd := &remote.Cmd{
+		Command: command,
+		Stdout:  outW,
+		Stderr:  errW,
+	}
+
+	if err := comm.Start(cmd); err != nil {
+		return fmt.Errorf("Error executing command %q: %v", cmd.Command, err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getBindFromString(bind string) (Bind, error) {
+	t := strings.FieldsFunc(bind, func(d rune) bool {
+		switch d {
+		case ':', '.':
+			return true
+		}
+		return false
+	})
+	if len(t) != 3 {
+		return Bind{}, errors.New("Invalid bind specification: " + bind)
+	}
+	return Bind{Alias: t[0], Service: t[1], Group: t[2]}, nil
 }
