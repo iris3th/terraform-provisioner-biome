@@ -29,7 +29,8 @@ resource "aws_instance" "ms-hab-sqlserver" {
 
   provisioner "habitat_dev" {
     peer = ""
-    
+    accept_license = true
+
     service {
       name = "core/sqlserver"
       topology = "standalone"
@@ -71,6 +72,7 @@ resource "aws_instance" "ms-hab-appserver" {
 
   provisioner "habitat_dev" {
     peer = "${aws_instance.ms-hab-sqlserver.private_ip}"
+    accept_license = true
     
     service {
       name = "mwrock/contosouniversity"

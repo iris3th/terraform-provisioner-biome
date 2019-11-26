@@ -17,7 +17,7 @@ variable "region" {
 variable "win_amis" {
   type = "map"
   default = {
-    us-east-1 = "ami-0bf148826ef491d16"
+    us-east-1 = "ami-027a14492d667b8f5"
     us-west-2 = "ami-9f5efbff"
     eu-west-1 = "ami-7ac78809"
   }

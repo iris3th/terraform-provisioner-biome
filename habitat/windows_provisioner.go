@@ -18,7 +18,6 @@ $env:Path = $env:Path,"C:\habitat" -join ";"
 [System.Environment]::SetEnvironmentVariable('Path', $env:Path, [System.EnvironmentVariableTarget]::Machine)
 # Install hab as a Windows service
 hab pkg install core/windows-service
-hab pkg exec core/windows-service install
 New-NetFirewallRule -DisplayName "Habitat TCP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9631,9638
 New-NetFirewallRule -DisplayName "Habitat UDP" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 9638
 `
@@ -36,7 +35,7 @@ func (p *provisioner) winInstallHabitat(o terraform.UIOutput, comm communicator.
 	if p.AcceptLicense {
 		content = fmt.Sprintf("%s\n%s", winHabLicAccept, winInstallScript)
 	} else {
-		content = fmt.Sprintf(winInstallScript)
+		content = fmt.Sprintf("%s", winInstallScript)
 	}
 
 	// Upload the script to target instance
@@ -96,7 +95,7 @@ func (p *provisioner) winStartHabitat(o terraform.UIOutput, comm communicator.Co
 	p.SupOptions = options
 	content += fmt.Sprintf("$svcPath = Join-Path $env:SystemDrive \"hab\\svc\\windows-service\"\n")
 	content += fmt.Sprintf("[xml]$configXml = Get-Content (Join-Path $svcPath HabService.dll.config)\n")
-	content += fmt.Sprintf("$configXml.configuration.appSettings.add[2].value = \"%s\"\n", options)
+	content += fmt.Sprintf("$configXml.configuration.appSettings.ChildNodes[\"2\"].value = \"%s\"\n", options)
 	content += fmt.Sprintf("$configXml.Save((Join-Path $svcPath HabService.dll.config))\n")
 	content += fmt.Sprintf("Start-Service Habitat\n")
 
@@ -117,8 +116,10 @@ func (p *provisioner) winStartHabService(o terraform.UIOutput, comm communicator
 	var command string
 	//var service Service
 	//service = params[0].habService
-	if err := p.winUploadUserTOML(o, comm, service); err != nil {
-		return err
+	if strings.TrimSpace(service.UserTOML) != "" {
+		if err := p.winUploadUserTOML(o, comm, service); err != nil {
+			return err
+		}
 	}
 
 	// Upload service group key
@@ -171,14 +172,6 @@ func (p *provisioner) winUploadUserTOML(o terraform.UIOutput, comm communicator.
 
 	userToml := strings.NewReader(service.UserTOML)
 
-	/*if err := comm.Upload(fmt.Sprintf("C:\\temp\\%s-user.toml", svcName), userToml); err != nil {
-		return err
-	}
-
-	command = fmt.Sprintf("move C:\\temp\\%s-user.toml %s\\user.toml", svcName, destDir)
-	o.Output(command)
-	return p.runCommand(o, comm, command)
-	*/
 	return comm.Upload(path.Join(destDir, "user.toml"), userToml)
 
 }
