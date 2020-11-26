@@ -33,12 +33,13 @@ Download and uncompress the latest release for your OS. This example uses the ma
 > wget https://github.com/iris3th/terraform-provisioner-Biome/releases/download/0.1/terraform-provisioner-Biome_dev_v0.1_darwin_amd64.tar.gz
 > tar -xvf terraform-provisioner-Biome_dev*.tar.gz
 ```
+^^^^^^^^^^^^ this part is not available yet ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Now copy the binary to the Terraform's plugins folder, if is your first plugin maybe isn't present.
 
 ```sh
 > mkdir -p ~/.terraform.d/plugins/
-> mv terraform-provisioner-Biome_dev*/terraform-provisioner-Biome_dev* ~/.terraform.d/plugins/
+> mv terraform-provisioner-Biome_dev*/terraform-provisioner-biome_dev* ~/.terraform.d/plugins/
 ```
 
 ### Build from source
@@ -49,11 +50,11 @@ Clone Provisioner repository to: `$GOPATH/src/github.com/iris3th/terraform-provi
 
 ```
 cd $GOPATH/src/github.com/iris3th/
-git clone https://github.com/iris3th/terraform-provisioner-Biome.git
-cd terraform-provisioner-Biome
-go build -o terraform-provisioner-Biome_dev
-mv ./terraform-provisioner-Biome_dev ~/.terraform.d/plugins/terraform-provisioner-Biome_dev
-chmod +x ~/.terraform.d/plugins/terraform-provisioner-Biome_dev
+git clone https://github.com/iris3th/terraform-provisioner-biome.git
+cd terraform-provisioner-biome
+go build -o terraform-provisioner-biome_dev
+mv ./terraform-provisioner-biome_dev ~/.terraform.d/plugins/terraform-provisioner-biome_dev
+chmod +x ~/.terraform.d/plugins/terraform-provisioner-biome_dev
 ```
 
 
