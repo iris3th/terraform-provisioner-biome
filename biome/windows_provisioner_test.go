@@ -1,4 +1,4 @@
-package habitat
+package biome
 
 import (
 	"testing"
@@ -14,26 +14,26 @@ import (
 
 const winInstallScriptContents = `
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-iwr https://api.bintray.com/content/habitat/stable/windows/x86_64/hab-%24latest-x86_64-windows.zip?bt_package=hab-x86_64-windows -Outfile c:\habitat.zip
-Expand-Archive c:/habitat.zip c:/
-mv c:/hab-* c:/habitat
-$env:Path = $env:Path,"C:\habitat" -join ";"
+iwr https://api.bintray.com/content/biome/stable/windows/x86_64/bio-%24latest-x86_64-windows.zip?bt_package=bio-x86_64-windows -Outfile c:\biome.zip
+Expand-Archive c:/biome.zip c:/
+mv c:/bio-* c:/biome
+$env:Path = $env:Path,"C:\biome" -join ";"
 [System.Environment]::SetEnvironmentVariable('Path', $env:Path, [System.EnvironmentVariableTarget]::Machine)
-# Install hab as a Windows service
-hab pkg install core/windows-service
-New-NetFirewallRule -DisplayName "Habitat TCP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9631,9638
-New-NetFirewallRule -DisplayName "Habitat UDP" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 9638
+# Install bio as a Windows service
+bio pkg install core/windows-service
+New-NetFirewallRule -DisplayName "biome TCP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9631,9638
+New-NetFirewallRule -DisplayName "biome UDP" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 9638
 `
-const winHabLicAcceptContents = `
-[System.Environment]::SetEnvironmentVariable('HAB_LICENSE', "accept", [System.EnvironmentVariableTarget]::Machine)
-[System.Environment]::SetEnvironmentVariable('HAB_LICENSE', "accept", [System.EnvironmentVariableTarget]::Process)
-[System.Environment]::SetEnvironmentVariable('HAB_LICENSE', "accept", [System.EnvironmentVariableTarget]::User)
+const winBioLicAcceptContents = `
+[System.Environment]::SetEnvironmentVariable('BIO_LICENSE', "accept", [System.EnvironmentVariableTarget]::Machine)
+[System.Environment]::SetEnvironmentVariable('BIO_LICENSE', "accept", [System.EnvironmentVariableTarget]::Process)
+[System.Environment]::SetEnvironmentVariable('BIO_LICENSE', "accept", [System.EnvironmentVariableTarget]::User)
 `
 
-func TestWinProvisioner_winInstallHabitat(t *testing.T) {
+func TestWinProvisioner_winInstallbiome(t *testing.T) {
 	var uploadPath, scriptName string
 	uploadPath = os.TempDir()
-	scriptName = "win_hab_install.ps1"
+	scriptName = "win_bio_install.ps1"
 
 	cases := map[string]struct {
 		Config     map[string]interface{}
@@ -65,7 +65,7 @@ func TestWinProvisioner_winInstallHabitat(t *testing.T) {
 			},
 
 			Uploads: map[string]string{
-				path.Join(path.Dir(uploadPath), scriptName): fmt.Sprintf("%s\n%s", winHabLicAccept, winInstallScript),
+				path.Join(path.Dir(uploadPath), scriptName): fmt.Sprintf("%s\n%s", winBioLicAccept, winInstallScript),
 			},
 		},
 	}
@@ -85,30 +85,30 @@ func TestWinProvisioner_winInstallHabitat(t *testing.T) {
 			t.Fatalf("Error: %v", err)
 		}
 
-		err = p.winInstallHabitat(o, c)
+		err = p.winInstallbiome(o, c)
 		if err != nil {
 			t.Fatalf("Test %q failed: %v", k, err)
 		}
 	}
 }
 
-func TestWinProvisioner_winStartHabitat(t *testing.T) {
-	var uploadPath, scriptName, scriptContent, habOptions string
+func TestWinProvisioner_winStartbiome(t *testing.T) {
+	var uploadPath, scriptName, scriptContent, bioOptions string
 	uploadPath = os.TempDir()
-	scriptName = "win_hab_start.ps1"
-	habOptions = " --peer 111.222.333.444 --no-color"
-	scriptContent += fmt.Sprintf("$svcPath = Join-Path $env:SystemDrive \"hab\\svc\\windows-service\"\n")
-	scriptContent += fmt.Sprintf("[xml]$configXml = Get-Content (Join-Path $svcPath HabService.dll.config)\n")
-	scriptContent += fmt.Sprintf("$configXml.configuration.appSettings.ChildNodes[\"2\"].value = \"%s\"\n", habOptions)
-	scriptContent += fmt.Sprintf("$configXml.Save((Join-Path $svcPath HabService.dll.config))\n")
-	scriptContent += fmt.Sprintf("Start-Service Habitat\n")
+	scriptName = "win_bio_start.ps1"
+	bioOptions = " --peer 111.222.333.444 --no-color"
+	scriptContent += fmt.Sprintf("$svcPath = Join-Path $env:SystemDrive \"bio\\svc\\windows-service\"\n")
+	scriptContent += fmt.Sprintf("[xml]$configXml = Get-Content (Join-Path $svcPath bioService.dll.config)\n")
+	scriptContent += fmt.Sprintf("$configXml.configuration.appSettings.ChildNodes[\"2\"].value = \"%s\"\n", bioOptions)
+	scriptContent += fmt.Sprintf("$configXml.Save((Join-Path $svcPath bioService.dll.config))\n")
+	scriptContent += fmt.Sprintf("Start-Service biome\n")
 
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
 		Uploads  map[string]string
 	}{
-		"Start Habitat with correct options": {
+		"Start biome with correct options": {
 			Config: map[string]interface{}{
 				"version":        "0.81.1",
 				"peer":           "111.222.333.444",
@@ -140,23 +140,23 @@ func TestWinProvisioner_winStartHabitat(t *testing.T) {
 			t.Fatalf("Error: %v", err)
 		}
 
-		err = p.winStartHabitat(o, c)
+		err = p.winStartbiome(o, c)
 		if err != nil {
 			t.Fatalf("Test %q failed: %v", k, err)
 		}
 	}
 }
 
-func TestWinProvisioner_winStartHabService(t *testing.T) {
+func TestWinProvisioner_winStartBioService(t *testing.T) {
 	var uploadPath, scriptName, scriptContent, buildAuthToken string
 	uploadPath = os.TempDir()
-	scriptName = "win_hab_start.ps1"
+	scriptName = "win_bio_start.ps1"
 
-	//svcOptions = " --name haborigin/service --topology standalone --binds [ \"database:sqlserver.default\"]"
+	//svcOptions = " --name bioorigin/service --topology standalone --binds [ \"database:sqlserver.default\"]"
 	// svcBind := Bind{Alias: "database", Service: "sqlserver", Group: "default"}
 	buildAuthToken = "1234567890abcdefghijklmnopqrstuvwxyz"
 	// service := Service{
-	// 	Name:     "haborigin/service",
+	// 	Name:     "bioorigin/service",
 	// 	Topology: "standalon",
 	// 	Binds:    []Bind{svcBind},
 	// }
@@ -166,7 +166,7 @@ func TestWinProvisioner_winStartHabService(t *testing.T) {
 		Commands map[string]bool
 		Uploads  map[string]string
 	}{
-		"Start Habitat Service with correct options": {
+		"Start biome Service with correct options": {
 			Config: map[string]interface{}{
 				"version":            "0.81.1",
 				"peer":               "111.222.333.444",
@@ -197,14 +197,14 @@ func TestWinProvisioner_winStartHabService(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				fmt.Sprintf("set HAB_AUTH_TOKEN=%s hab svc load core/foo  --topology standalone --strategy none --channel stable --bind backend:bar.default", buildAuthToken): true,
-				fmt.Sprintf("set HAB_AUTH_TOKEN=%s hab svc load core/bar  --topology standalone --strategy rolling --channel staging", buildAuthToken):                        true,
-				fmt.Sprintf("mkdir C:\\hab\\user\\bar\\config"): true,
+				fmt.Sprintf("set BIO_AUTH_TOKEN=%s bio svc load core/foo  --topology standalone --strategy none --channel stable --bind backend:bar.default", buildAuthToken): true,
+				fmt.Sprintf("set BIO_AUTH_TOKEN=%s bio svc load core/bar  --topology standalone --strategy rolling --channel staging", buildAuthToken):                        true,
+				fmt.Sprintf("mkdir C:\\bio\\user\\bar\\config"): true,
 			},
 
 			Uploads: map[string]string{
 				path.Join(path.Dir(uploadPath), scriptName):          fmt.Sprintf("%s", scriptContent),
-				path.Join("C:\\hab\\user\\bar\\config", "user.toml"): "[config]\n port = 8095",
+				path.Join("C:\\bio\\user\\bar\\config", "user.toml"): "[config]\n port = 8095",
 			},
 		},
 	}
@@ -225,7 +225,7 @@ func TestWinProvisioner_winStartHabService(t *testing.T) {
 
 		var errs []error
 		for _, s := range p.Services {
-			err = p.winStartHabService(o, c, s)
+			err = p.winStartBioService(o, c, s)
 			if err != nil {
 				errs = append(errs, err)
 			}

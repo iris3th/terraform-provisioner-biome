@@ -1,4 +1,4 @@
-package habitat
+package biome
 
 import (
 	"testing"

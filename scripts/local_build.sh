@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
 cd ..
-go build -o terraform-provisioner-habitat_dev
-mv ./terraform-provisioner-habitat_dev ~/.terraform.d/plugins/terraform-provisioner-habitat_dev
-chmod +x ~/.terraform.d/plugins/terraform-provisioner-habitat_dev
+go build -o terraform-provisioner-biome_dev
+mv ./terraform-provisioner-biome_dev ~/.terraform.d/plugins/terraform-provisioner-biome_dev
+chmod +x ~/.terraform.d/plugins/terraform-provisioner-biome_dev

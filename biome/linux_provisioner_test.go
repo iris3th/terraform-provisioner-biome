@@ -1,4 +1,4 @@
-package habitat
+package biome
 
 import (
 	"github.com/hashicorp/terraform/communicator"
@@ -8,26 +8,26 @@ import (
 )
 
 const linuxDefaultSystemdUnitFileContents = `[Unit]
-Description=Habitat Supervisor
+Description=Biome Supervisor
 
 [Service]
-ExecStart=/bin/hab sup run --peer host1 --peer 1.2.3.4 --auto-update
+ExecStart=/bin/bio sup run --peer host1 --peer 1.2.3.4 --auto-update
 Restart=on-failure
 [Install]
 WantedBy=default.target`
 
 const linuxCustomSystemdUnitFileContents = `[Unit]
-Description=Habitat Supervisor
+Description=Biome Supervisor
 
 [Service]
-ExecStart=/bin/hab sup run --listen-ctl 192.168.0.1:8443 --listen-gossip 192.168.10.1:9443 --listen-http 192.168.20.1:8080 --peer host1 --peer host2 --peer 1.2.3.4 --peer 5.6.7.8 --peer foo.example.com
+ExecStart=/bin/bio sup run --listen-ctl 192.168.0.1:8443 --listen-gossip 192.168.10.1:9443 --listen-http 192.168.20.1:8080 --peer host1 --peer host2 --peer 1.2.3.4 --peer 5.6.7.8 --peer foo.example.com
 Restart=on-failure
-Environment="HAB_SUP_GATEWAY_AUTH_TOKEN=ea7-beef"
-Environment="HAB_AUTH_TOKEN=dead-beef"
+Environment="BIO_SUP_GATEWAY_AUTH_TOKEN=ea7-beef"
+Environment="BIO_AUTH_TOKEN=dead-beef"
 [Install]
 WantedBy=default.target`
 
-func TestLinuxProvisioner_linuxInstallHabitat(t *testing.T) {
+func TestLinuxProvisioner_linuxInstallbiome(t *testing.T) {
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
@@ -40,11 +40,11 @@ func TestLinuxProvisioner_linuxInstallHabitat(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'curl --silent -L0 https://raw.githubusercontent.com/habitat-sh/habitat/master/components/hab/install.sh > install.sh'": true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'bash ./install.sh -v 0.79.1'":                                                                                          true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab install core/busybox'":                                                                                             true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab pkg exec core/busybox adduser -D -g \"\" hab'":                                                                     true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'rm -f install.sh'":                                                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'curl --silent -L0 https://raw.githubusercontent.com/biome-sh/biome/master/components/bio/install.sh > install.sh'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bash ./install.sh -v 0.79.1'":                                                                                          true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio install core/busybox'":                                                                                             true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio pkg exec core/busybox adduser -D -g \"\" bio'":                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'rm -f install.sh'":                                                                                                     true,
 			},
 		},
 		"Installation without sudo": {
@@ -55,14 +55,14 @@ func TestLinuxProvisioner_linuxInstallHabitat(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'curl --silent -L0 https://raw.githubusercontent.com/habitat-sh/habitat/master/components/hab/install.sh > install.sh'": true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'bash ./install.sh -v 0.79.1'":                                                                                          true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'hab install core/busybox'":                                                                                             true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'hab pkg exec core/busybox adduser -D -g \"\" hab'":                                                                     true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'rm -f install.sh'":                                                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'curl --silent -L0 https://raw.githubusercontent.com/biome-sh/biome/master/components/bio/install.sh > install.sh'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'bash ./install.sh -v 0.79.1'":                                                                                          true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'bio install core/busybox'":                                                                                             true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'bio pkg exec core/busybox adduser -D -g \"\" bio'":                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'rm -f install.sh'":                                                                                                     true,
 			},
 		},
-		"Installation with Habitat license acceptance": {
+		"Installation with biome license acceptance": {
 			Config: map[string]interface{}{
 				"version":        "0.81.0",
 				"accept_license": true,
@@ -71,12 +71,12 @@ func TestLinuxProvisioner_linuxInstallHabitat(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'curl --silent -L0 https://raw.githubusercontent.com/habitat-sh/habitat/master/components/hab/install.sh > install.sh'": true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'bash ./install.sh -v 0.81.0'":                                                                                          true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab install core/busybox'":                                                                                             true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab pkg exec core/busybox adduser -D -g \"\" hab'":                                                                     true,
-				"env HAB_LICENSE=accept sudo -E /bin/bash -c 'hab -V'":                                                                                                                                        true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'rm -f install.sh'":                                                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'curl --silent -L0 https://raw.githubusercontent.com/biome-sh/biome/master/components/bio/install.sh > install.sh'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bash ./install.sh -v 0.81.0'":                                                                                          true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio install core/busybox'":                                                                                             true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio pkg exec core/busybox adduser -D -g \"\" bio'":                                                                     true,
+				"env BIO_LICENSE=accept sudo -E /bin/bash -c 'bio -V'":                                                                                                                                        true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'rm -f install.sh'":                                                                                                     true,
 			},
 		},
 	}
@@ -94,59 +94,59 @@ func TestLinuxProvisioner_linuxInstallHabitat(t *testing.T) {
 			t.Fatalf("Error: %v", err)
 		}
 
-		err = p.linuxInstallHabitat(o, c)
+		err = p.linuxInstallbiome(o, c)
 		if err != nil {
 			t.Fatalf("Test %q failed: %v", k, err)
 		}
 	}
 }
 
-func TestLinuxProvisioner_linuxStartHabitat(t *testing.T) {
+func TestLinuxProvisioner_linuxStartbiome(t *testing.T) {
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
 		Uploads  map[string]string
 	}{
-		"Start systemd Habitat with sudo": {
+		"Start systemd biome with sudo": {
 			Config: map[string]interface{}{
 				"version":      "0.79.1",
 				"auto_update":  true,
 				"use_sudo":     true,
-				"service_name": "hab-sup",
+				"service_name": "bio-sup",
 				"peer":         "--peer host1",
 				"peers":        []interface{}{"1.2.3.4"},
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab install core/hab-sup/0.79.1'":                             true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'systemctl enable hab-sup && systemctl start hab-sup'":         true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'mv /tmp/hab-sup.service /etc/systemd/system/hab-sup.service'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio install core/bio-sup/0.79.1'":                             true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'systemctl enable bio-sup && systemctl start bio-sup'":         true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'mv /tmp/bio-sup.service /etc/systemd/system/bio-sup.service'": true,
 			},
 
 			Uploads: map[string]string{
-				"/tmp/hab-sup.service": linuxDefaultSystemdUnitFileContents,
+				"/tmp/bio-sup.service": linuxDefaultSystemdUnitFileContents,
 			},
 		},
-		"Start systemd Habitat without sudo": {
+		"Start systemd biome without sudo": {
 			Config: map[string]interface{}{
 				"version":      "0.79.1",
 				"auto_update":  true,
 				"use_sudo":     false,
-				"service_name": "hab-sup",
+				"service_name": "bio-sup",
 				"peer":         "--peer host1",
 				"peers":        []interface{}{"1.2.3.4"},
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'hab install core/hab-sup/0.79.1'":                     true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true /bin/bash -c 'systemctl enable hab-sup && systemctl start hab-sup'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'bio install core/bio-sup/0.79.1'":                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true /bin/bash -c 'systemctl enable bio-sup && systemctl start bio-sup'": true,
 			},
 
 			Uploads: map[string]string{
-				"/etc/systemd/system/hab-sup.service": linuxDefaultSystemdUnitFileContents,
+				"/etc/systemd/system/bio-sup.service": linuxDefaultSystemdUnitFileContents,
 			},
 		},
-		"Start unmanaged Habitat with sudo": {
+		"Start unmanaged biome with sudo": {
 			Config: map[string]interface{}{
 				"version":      "0.81.0",
 				"license":      "accept-no-persist",
@@ -158,21 +158,21 @@ func TestLinuxProvisioner_linuxStartHabitat(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab install core/hab-sup/0.81.0'":                                                                                true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'mkdir -p /hab/sup/default && chmod o+w /hab/sup/default'":                                                        true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c '(setsid hab sup run --peer host1 --peer 1.2.3.4 --auto-update > /hab/sup/default/sup.log 2>&1 <&1 &) ; sleep 1'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio install core/bio-sup/0.81.0'":                                                                                true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'mkdir -p /bio/sup/default && chmod o+w /bio/sup/default'":                                                        true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c '(setsid bio sup run --peer host1 --peer 1.2.3.4 --auto-update > /bio/sup/default/sup.log 2>&1 <&1 &) ; sleep 1'": true,
 			},
 
 			Uploads: map[string]string{
-				"/etc/systemd/system/hab-sup.service": linuxDefaultSystemdUnitFileContents,
+				"/etc/systemd/system/bio-sup.service": linuxDefaultSystemdUnitFileContents,
 			},
 		},
-		"Start Habitat with custom config": {
+		"Start biome with custom config": {
 			Config: map[string]interface{}{
 				"version":            "0.79.1",
 				"auto_update":        false,
 				"use_sudo":           true,
-				"service_name":       "hab-sup",
+				"service_name":       "bio-sup",
 				"peer":               "--peer host1 --peer host2",
 				"peers":              []interface{}{"1.2.3.4", "5.6.7.8", "foo.example.com"},
 				"listen_ctl":         "192.168.0.1:8443",
@@ -184,13 +184,13 @@ func TestLinuxProvisioner_linuxStartHabitat(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true HAB_AUTH_TOKEN=dead-beef sudo -E /bin/bash -c 'hab install core/hab-sup/0.79.1'":                             true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true HAB_AUTH_TOKEN=dead-beef sudo -E /bin/bash -c 'systemctl enable hab-sup && systemctl start hab-sup'":         true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true HAB_AUTH_TOKEN=dead-beef sudo -E /bin/bash -c 'mv /tmp/hab-sup.service /etc/systemd/system/hab-sup.service'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true BIO_AUTH_TOKEN=dead-beef sudo -E /bin/bash -c 'bio install core/bio-sup/0.79.1'":                             true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true BIO_AUTH_TOKEN=dead-beef sudo -E /bin/bash -c 'systemctl enable bio-sup && systemctl start bio-sup'":         true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true BIO_AUTH_TOKEN=dead-beef sudo -E /bin/bash -c 'mv /tmp/bio-sup.service /etc/systemd/system/bio-sup.service'": true,
 			},
 
 			Uploads: map[string]string{
-				"/tmp/hab-sup.service": linuxCustomSystemdUnitFileContents,
+				"/tmp/bio-sup.service": linuxCustomSystemdUnitFileContents,
 			},
 		},
 	}
@@ -209,7 +209,7 @@ func TestLinuxProvisioner_linuxStartHabitat(t *testing.T) {
 			t.Fatalf("Error: %v", err)
 		}
 
-		err = p.linuxStartHabitat(o, c)
+		err = p.linuxStartbiome(o, c)
 		if err != nil {
 			t.Fatalf("Test %q failed: %v", k, err)
 		}
@@ -226,14 +226,14 @@ func TestLinuxProvisioner_linuxUploadRingKey(t *testing.T) {
 				"version":          "0.79.1",
 				"auto_update":      true,
 				"use_sudo":         true,
-				"service_name":     "hab-sup",
+				"service_name":     "bio-sup",
 				"peers":            []interface{}{"1.2.3.4"},
 				"ring_key":         "test-ring",
 				"ring_key_content": "dead-beef",
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'echo -e \"dead-beef\" | hab ring key import'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'echo -e \"dead-beef\" | bio ring key import'": true,
 			},
 		},
 	}
@@ -258,18 +258,18 @@ func TestLinuxProvisioner_linuxUploadRingKey(t *testing.T) {
 	}
 }
 
-func TestLinuxProvisioner_linuxStartHabitatService(t *testing.T) {
+func TestLinuxProvisioner_linuxStartbiomeService(t *testing.T) {
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
 		Uploads  map[string]string
 	}{
-		"Start Habitat service with sudo": {
+		"Start biome service with sudo": {
 			Config: map[string]interface{}{
 				"version":          "0.79.1",
 				"auto_update":      false,
 				"use_sudo":         true,
-				"service_name":     "hab-sup",
+				"service_name":     "bio-sup",
 				"peers":            []interface{}{"1.2.3.4"},
 				"ring_key":         "test-ring",
 				"ring_key_content": "dead-beef",
@@ -299,14 +299,14 @@ func TestLinuxProvisioner_linuxStartHabitatService(t *testing.T) {
 			},
 
 			Commands: map[string]bool{
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab pkg install core/foo  --channel stable'":                                                                        true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'mkdir -p /hab/user/foo/config'":                                                                                     true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'mv /tmp/user-a5b83ec1b302d109f41852ae17379f75c36dff9bc598aae76b6f7c9cd425fd76.toml /hab/user/foo/config/user.toml'": true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab svc load core/foo  --topology standalone --strategy none --channel stable --bind backend:bar.default'":          true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab pkg install core/bar  --channel staging'":                                                                       true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'mkdir -p /hab/user/bar/config'":                                                                                     true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'mv /tmp/user-6466ae3283ae1bd4737b00367bc676c6465b25682169ea5f7da222f3f078a5bf.toml /hab/user/bar/config/user.toml'": true,
-				"env HAB_NONINTERACTIVE=true HAB_NOCOLORING=true sudo -E /bin/bash -c 'hab svc load core/bar  --topology standalone --strategy rolling --channel staging'":                                 true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio pkg install core/foo  --channel stable'":                                                                        true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'mkdir -p /bio/user/foo/config'":                                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'mv /tmp/user-a5b83ec1b302d109f41852ae17379f75c36dff9bc598aae76b6f7c9cd425fd76.toml /bio/user/foo/config/user.toml'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio svc load core/foo  --topology standalone --strategy none --channel stable --bind backend:bar.default'":          true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio pkg install core/bar  --channel staging'":                                                                       true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'mkdir -p /bio/user/bar/config'":                                                                                     true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'mv /tmp/user-6466ae3283ae1bd4737b00367bc676c6465b25682169ea5f7da222f3f078a5bf.toml /bio/user/bar/config/user.toml'": true,
+				"env BIO_NONINTERACTIVE=true BIO_NOCOLORING=true sudo -E /bin/bash -c 'bio svc load core/bar  --topology standalone --strategy rolling --channel staging'":                                 true,
 			},
 
 			Uploads: map[string]string{
@@ -332,7 +332,7 @@ func TestLinuxProvisioner_linuxStartHabitatService(t *testing.T) {
 
 		var errs []error
 		for _, s := range p.Services {
-			err = p.linuxStartHabitatService(o, c, s)
+			err = p.linuxStartbiomeService(o, c, s)
 			if err != nil {
 				errs = append(errs, err)
 			}

@@ -1,4 +1,4 @@
-package habitat
+package biome
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 )
 
 type Params struct {
-	habService Service
+	bioService Service
 }
 
 type provisioner struct {
@@ -52,11 +52,11 @@ type provisioner struct {
 	AcceptLicense    bool
 	osType           string
 
-	installHabitat      provisionFn
-	startHabitat        provisionFn
+	installbiome      provisionFn
+	startbiome        provisionFn
 	uploadRingKey       provisionFn
 	uploadCtlSecret     provisionFn
-	startHabitatService provisionServiceFn
+	startbiomeService provisionServiceFn
 }
 
 type provisionFn func(terraform.UIOutput, communicator.Communicator) error
@@ -97,7 +97,7 @@ func Provisioner() terraform.ResourceProvisioner {
 			"service_name": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				Default:  "hab-supervisor",
+				Default:  "bio-supervisor",
 			},
 			"use_sudo": &schema.Schema{
 				Type:     schema.TypeBool,
@@ -296,15 +296,15 @@ func applyFn(ctx context.Context) error {
 
 	switch p.osType {
 	case "linux":
-		p.installHabitat = p.linuxInstallHabitat
+		p.installbiome = p.linuxInstallbiome
 		p.uploadRingKey = p.linuxUploadRingKey
 		p.uploadCtlSecret = p.linuxUploadCtlSecret
-		p.startHabitat = p.linuxStartHabitat
-		p.startHabitatService = p.linuxStartHabitatService
+		p.startbiome = p.linuxStartbiome
+		p.startbiomeService = p.linuxStartbiomeService
 	case "windows":
-		p.installHabitat = p.winInstallHabitat
-		p.startHabitatService = p.winStartHabService
-		p.startHabitat = p.winStartHabitat
+		p.installbiome = p.winInstallbiome
+		p.startbiomeService = p.winStartBioService
+		p.startbiome = p.winStartbiome
 
 	default:
 		return fmt.Errorf("Unsupported os type: %s", p.osType)
@@ -330,9 +330,9 @@ func applyFn(ctx context.Context) error {
 	defer comm.Disconnect()
 
 	if !p.SkipInstall {
-		o.Output("Installing habitat...")
-		if err := p.installHabitat(o, comm); err != nil {
-			o.Output("Error installing habitat...")
+		o.Output("Installing biome...")
+		if err := p.installbiome(o, comm); err != nil {
+			o.Output("Error installing biome...")
 			return err
 		}
 	}
@@ -352,14 +352,14 @@ func applyFn(ctx context.Context) error {
 			}
 		}
 	}
-	o.Output("Starting the habitat supervisor...")
-	if err := p.startHabitat(o, comm); err != nil {
+	o.Output("Starting the biome supervisor...")
+	if err := p.startbiome(o, comm); err != nil {
 		return err
 	}
 	if p.Services != nil {
 		for _, service := range p.Services {
 			o.Output("Starting service: " + service.Name)
-			if err := p.startHabitatService(o, comm, service); err != nil {
+			if err := p.startbiomeService(o, comm, service); err != nil {
 				return err
 			}
 		}
@@ -389,10 +389,10 @@ func validateFn(c *terraform.ResourceConfig) (ws []string, es []error) {
 			versionOld, _ := version.NewVersion("0.79.0")
 			versionRequired, _ := version.NewVersion(v.(string))
 			if versionRequired.GreaterThan(versionOld) {
-				es = append(es, errors.New("Habitat end user license agreement needs to be accepted, set the accept_license argument to true to accept"))
+				es = append(es, errors.New("biome end user license agreement needs to be accepted, set the accept_license argument to true to accept"))
 			}
 		} else { // blank means latest version
-			es = append(es, errors.New("Habitat end user license agreement needs to be accepted, set the accept_license argument to true to accept"))
+			es = append(es, errors.New("biome end user license agreement needs to be accepted, set the accept_license argument to true to accept"))
 		}
 	}
 
