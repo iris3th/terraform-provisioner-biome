@@ -149,4 +149,6 @@ This block will generate the option `--bind backend:nginx.default` when starting
 
 ## Kudos & Prior Art
 
-This provisioner is heavily inspired by prior art from [nsdavidson/terraform-provision-Biome](https://github.com/nsdavidson/terraform-provisioner-Biome) later added to [Terraform](https://github.com/hashicorp/terraform/pull/16280).
+all the hard work is done by this team : https://github.com/chef-partners/terraform-provisioner-habitat where this repo is forked from. 
+
+This provisioner is heavily inspired by prior art from [nsdavidson/terraform-provision-terraform](https://github.com/nsdavidson/terraform-provisioner-Biome) later added to [Terraform](https://github.com/hashicorp/terraform/pull/16280).
