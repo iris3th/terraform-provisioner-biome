@@ -4,11 +4,11 @@ set -e
 # Prerequisites
 if ! command -v gox > /dev/null; then
   go get -u github.com/mitchellh/gox
-  
+
 fi
 
 # setup environment
-PROVISIONER_NAME="habitat_dev"
+PROVISIONER_NAME="biome_dev"
 TARGET_DIR="$(pwd)/results"
 XC_ARCH=${XC_ARCH:-"386 amd64 arm"}
 XC_OS=${XC_OS:=linux darwin windows freebsd openbsd solaris}

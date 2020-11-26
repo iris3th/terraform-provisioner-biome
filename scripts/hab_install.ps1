@@ -1,9 +1,9 @@
-# A sample script to install Habitat on a Windows machine
+# A sample script to install biome on a Windows machine
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-iwr https://api.bintray.com/content/habitat/stable/windows/x86_64/hab-%24latest-x86_64-windows.zip?bt_package=hab-x86_64-windows -Outfile c:\habitat.zip
-Expand-Archive c:/habitat.zip c:/
-mv c:/hab-* c:/habitat
-$env:Path = $env:Path,"C:\habitat" -join ";"
+iwr https://api.bintray.com/content/biome/stable/windows/x86_64/hab-%24latest-x86_64-windows.zip?bt_package=hab-x86_64-windows -Outfile c:\biome.zip
+Expand-Archive c:/biome.zip c:/
+mv c:/hab-* c:/biome
+$env:Path = $env:Path,"C:\biome" -join ";"
 [System.Environment]::SetEnvironmentVariable('Path', $env:Path, [System.EnvironmentVariableTarget]::Machine)
 # Install hab as a Windows service
 hab pkg install core/windows-service
@@ -14,6 +14,6 @@ $svcPath = Join-Path $env:SystemDrive "hab\svc\windows-service"
 $configXml.configuration.appSettings.add[2].value = "--no-color --peer ${peer}"
 $configXml.Save((Join-Path $svcPath HabService.dll.config))
 # Start service
-Start-Service Habitat
-New-NetFirewallRule -DisplayName "Habitat TCP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9631,9638
-New-NetFirewallRule -DisplayName "Habitat UDP" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 9638
+Start-Service biome
+New-NetFirewallRule -DisplayName "biome TCP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 9631,9638
+New-NetFirewallRule -DisplayName "biome UDP" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 9638

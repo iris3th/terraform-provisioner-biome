@@ -8,12 +8,11 @@ export PATH=$(pwd)/go/bin:$PATH
 export GOROOT=$(pwd)/go
 export GOPATH=$(pwd)
 
-ls -l ${GOPATH}/src/github.com/chef-partners/terraform-provisioner-habitat/habitat
-go test ${GOPATH}/src/github.com/chef-partners/terraform-provisioner-habitat/habitat -v
+ls -l ${GOPATH}/src/github.com/chef-partners/terraform-provisioner-biome/biome
+go test ${GOPATH}/src/github.com/chef-partners/terraform-provisioner-biome/biome -v
 if [ $? -ne 0 ];
 then
-    echo "Failure in habitat provisioner unit tests"
+    echo "Failure in biome provisioner unit tests"
     exit 1
 fi
-echo "Successfully ran the unit tests for habitat provisioner"
-
+echo "Successfully ran the unit tests for biome provisioner"

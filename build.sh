@@ -26,7 +26,7 @@ go get -u github.com/hashicorp/terraform/terraform
 go get -u github.com/hashicorp/terraform/communicator
 go get -u github.com/hashicorp/terraform/config
 go get -u github.com/mitchellh/go-linereader
-go get -u github.com/chef-partners/terraform-provisioner-habitat/habitat
+go get -u github.com/iris3th/terraform-provisioner-habitat/biome 
 
 echo "Installed project and dependencies"
 
@@ -40,4 +40,3 @@ then
     exit 1
 fi
 echo "Successfully built habitat provisoner"
-
