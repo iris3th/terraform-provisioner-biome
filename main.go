@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/hashicorp/terraform/plugin"
 	"github.com/hashicorp/terraform/terraform"
-	"github.com/iris3th/terraform-provisioner-habitat/biome"
+	"github.com/iris3th/terraform-provisioner-biome/biome"
 )
 
 func main() {
