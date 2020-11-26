@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 
 WORKROOT=$(pwd)
 cd ${WORKROOT}
