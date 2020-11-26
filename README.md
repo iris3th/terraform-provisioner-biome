@@ -25,12 +25,12 @@ This Biome provisioner is based on [Terraform](https://www.terraform.io), this m
 
 ### Installation from binaries (recommended)
 
-The recommended way to install Biome provisioner is to use the binary distributions from the [Releases](https://github.com/chef-partners/terraform-provisioner-Biome/releases) page. The packages are available for macOS, Windows and Linux.
+The recommended way to install Biome provisioner is to use the binary distributions from the [Releases](https://github.com/iris3th/terraform-provisioner-Biome/releases) page. The packages are available for macOS, Windows and Linux.
 
 Download and uncompress the latest release for your OS. This example uses the macOS binary.
 
 ```sh
-> wget https://github.com/chef-partners/terraform-provisioner-Biome/releases/download/0.1/terraform-provisioner-Biome_dev_v0.1_darwin_amd64.tar.gz
+> wget https://github.com/iris3th/terraform-provisioner-Biome/releases/download/0.1/terraform-provisioner-Biome_dev_v0.1_darwin_amd64.tar.gz
 > tar -xvf terraform-provisioner-Biome_dev*.tar.gz
 ```
 
@@ -45,11 +45,11 @@ Now copy the binary to the Terraform's plugins folder, if is your first plugin m
 
 If you wish to compile the provisioner from source code, you'll first need [Go](http://www.golang.org) installed on your machine (version >=1.11.4 is *required*). You'll also need to correctly setup a [GOPATH](http://golang.org/doc/code.html#GOPATH), as well as adding `$GOPATH/bin` to your `$PATH`. In addition you will need to install required Terraform packages on your machine from Hashicorp Terraform [repository](https://github.com/hashicorp/terraform).
 
-Clone Provisioner repository to: `$GOPATH/src/github.com/chef-partners/terraform-provisioner-Biome`
+Clone Provisioner repository to: `$GOPATH/src/github.com/iris3th/terraform-provisioner-Biome`
 
 ```
-cd $GOPATH/src/github.com/chef-partners/
-git clone https://github.com/chef-partners/terraform-provisioner-Biome.git
+cd $GOPATH/src/github.com/iris3th/
+git clone https://github.com/iris3th/terraform-provisioner-Biome.git
 cd terraform-provisioner-Biome
 go build -o terraform-provisioner-Biome_dev
 mv ./terraform-provisioner-Biome_dev ~/.terraform.d/plugins/terraform-provisioner-Biome_dev
