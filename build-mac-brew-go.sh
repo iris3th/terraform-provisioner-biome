@@ -46,7 +46,7 @@ echo "Installed project and dependencies"
 # build
 cd ${WORKROOT}
 
-go build -o terraform-provisioner-habitat_dev -v
+go build -o terraform-provisioner-biome_dev -v
 if [ $? -ne 0 ];
 then
     echo "Failure in building habitat provisioner"

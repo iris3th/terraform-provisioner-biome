@@ -1,4 +1,4 @@
-package Biome
+package biome
 
 import (
 	"bytes"
@@ -13,7 +13,6 @@ import (
 	"github.com/hashicorp/terraform/terraform"
 )
 
-#const linuxInstallURL = "https://raw.githubusercontent.com/Biome-sh/Biome/master/components/hab/install.sh"
 const linuxInstallURL = "https://github.com/biome-sh/biome/releases/download/bio-1.5.75/bio-1.5.75-x86_64-linux"
 const systemdUnit = `
 [Unit]

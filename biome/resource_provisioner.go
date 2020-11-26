@@ -296,11 +296,11 @@ func applyFn(ctx context.Context) error {
 
 	switch p.osType {
 	case "linux":
-		p.installbiome = p.linuxInstallbiome
+		p.installbiome = p.linuxInstallBiome
 		p.uploadRingKey = p.linuxUploadRingKey
 		p.uploadCtlSecret = p.linuxUploadCtlSecret
-		p.startbiome = p.linuxStartbiome
-		p.startbiomeService = p.linuxStartbiomeService
+		p.startbiome = p.linuxStartBiome
+		p.startbiomeService = p.linuxStartBiomeService
 	case "windows":
 		p.installbiome = p.winInstallbiome
 		p.startbiomeService = p.winStartBioService

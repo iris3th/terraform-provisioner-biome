@@ -27,7 +27,7 @@ Environment="BIO_AUTH_TOKEN=dead-beef"
 [Install]
 WantedBy=default.target`
 
-func TestLinuxProvisioner_linuxInstallbiome(t *testing.T) {
+func TestLinuxProvisioner_linuxInstallBiome(t *testing.T) {
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
@@ -94,14 +94,14 @@ func TestLinuxProvisioner_linuxInstallbiome(t *testing.T) {
 			t.Fatalf("Error: %v", err)
 		}
 
-		err = p.linuxInstallbiome(o, c)
+		err = p.linuxInstallBiome(o, c)
 		if err != nil {
 			t.Fatalf("Test %q failed: %v", k, err)
 		}
 	}
 }
 
-func TestLinuxProvisioner_linuxStartbiome(t *testing.T) {
+func TestLinuxProvisioner_linuxStartBiome(t *testing.T) {
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
@@ -209,7 +209,7 @@ func TestLinuxProvisioner_linuxStartbiome(t *testing.T) {
 			t.Fatalf("Error: %v", err)
 		}
 
-		err = p.linuxStartbiome(o, c)
+		err = p.linuxStartBiome(o, c)
 		if err != nil {
 			t.Fatalf("Test %q failed: %v", k, err)
 		}
@@ -258,7 +258,7 @@ func TestLinuxProvisioner_linuxUploadRingKey(t *testing.T) {
 	}
 }
 
-func TestLinuxProvisioner_linuxStartbiomeService(t *testing.T) {
+func TestLinuxProvisioner_linuxStartBiomeService(t *testing.T) {
 	cases := map[string]struct {
 		Config   map[string]interface{}
 		Commands map[string]bool
@@ -332,7 +332,7 @@ func TestLinuxProvisioner_linuxStartbiomeService(t *testing.T) {
 
 		var errs []error
 		for _, s := range p.Services {
-			err = p.linuxStartbiomeService(o, c, s)
+			err = p.linuxStartBiomeService(o, c, s)
 			if err != nil {
 				errs = append(errs, err)
 			}

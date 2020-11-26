@@ -9,7 +9,7 @@ import (
 func main() {
 	plugin.Serve(&plugin.ServeOpts{
 		ProvisionerFunc: func() terraform.ResourceProvisioner {
-			return habitat.Provisioner()
+			return biome.Provisioner()
 		},
 	})
 }
